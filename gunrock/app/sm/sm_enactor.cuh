@@ -187,7 +187,7 @@ struct SMIterationLoop : public IterationLoopBase
                 return false;
             }
             // src is valid
-            if (results[src] != 1)
+            if (results[src] == 0)
                 return false;
             // 1 way look-ahead
             if (subgraphs[dest] < NG[counter[0] * 2 + 1])
@@ -204,8 +204,8 @@ struct SMIterationLoop : public IterationLoopBase
             return true;
         };
 
-        //frontier.queue_length = graph.edges;
-        //frontier.queue_reset = true;
+        frontier.queue_length = graph.edges;
+        frontier.queue_reset = true;
         size_t pointer_head = 0;
         for (int iter = 0; iter < 1; ++iter) {
             GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
@@ -239,6 +239,7 @@ struct SMIterationLoop : public IterationLoopBase
                     oprtr_parameters, look_ahead_op));
             }
 
+            flags.Print();
             GUARD_CU(util::CUBSelect_flagged(
                 indices.GetPointer(util::DEVICE),
                 flags.GetPointer(util::DEVICE),
@@ -247,6 +248,8 @@ struct SMIterationLoop : public IterationLoopBase
                 nodes_data));
             GUARD_CU(num_subs.Move(util::DEVICE, util::HOST));
             pointer_head += num_subs.GetPointer(util::HOST)[0];
+            indices.Print();
+            num_subs.Print();
         }
 
         return retval;
