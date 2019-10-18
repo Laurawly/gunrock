@@ -96,18 +96,6 @@ struct SMIterationLoop : public IterationLoopBase
 	util::Array1D<SizeT, VertexT> *null_frontier = NULL;
         auto complete_graph = null_frontier;
 
-
-	auto print_frontier = [] __host__ __device__(
-	    VertexT * v_q, const SizeT &pos) 
-        {
-	    VertexT v = v_q[pos];
-	    printf("Frontier @ %u = %u\n", pos, v);
-	    return;
-	};
-
-//	GUARD_CU(frontier.V_Q()->ForAll(print_frontier , frontier.queue_length, util::DEVICE, stream));
-//	GUARD_CU(frontier.Next_V_Q()->ForAll(print_frontier , frontier.queue_length, util::DEVICE, stream));
-
         // Store data graph degrees to subgraphs
         GUARD_CU(subgraphs.ForAll([row_offsets]
             __host__ __device__ (VertexT *subgraphs_, const SizeT & v)
@@ -127,7 +115,6 @@ struct SMIterationLoop : public IterationLoopBase
                     isValid[src] = false;
                     atomicAdd(subgraphs + dest,  -1);
                 }
-
             }
             return false;
         };
@@ -142,24 +129,26 @@ struct SMIterationLoop : public IterationLoopBase
             return true;
         };
 
-        auto prune_op = [subgraphs, isValid, NG, query_ro, query_ci, flags, counter, NG_src, NG_dest, results, nodes_data] __host__ __device__(
+        NG_src.Print();
+        NG_dest.Print();
+        auto prune_op = [subgraphs, isValid, NG, query_ro, query_ci, flags, counter, results, nodes_data] __host__ __device__(
             const VertexT &src, VertexT &dest, const SizeT &edge_id,
             const VertexT &input_item, const SizeT &input_pos,
             SizeT &output_pos) -> bool
         {
             if (src < 0 || src >= nodes_data)
                 return false;
-            if ((!isValid[src]) || (!isValid[dest])) {
+            if ((!isValid[src]) || (!isValid[dest]))
                 return false;
-            }
             // NG has query node id sequence in its even pos; min degree of neighbors in odd pos
             VertexT query_id = NG[counter[0] * 2];
+            SizeT min_degree = NG[counter[0] * 2 + 1];
             // special init for first iteration
             if (counter[0] == 0) {
                 if (subgraphs[src] < (query_ro[query_id + 1] - query_ro[query_id]))
                     return false;
                 // 1 way look ahead
-                if (subgraphs[dest] < NG[counter[0] * 2 + 1]) {
+                if (subgraphs[dest] < min_degree) {
                     return false;
                 }
                 flags[src] = true;
@@ -187,12 +176,16 @@ struct SMIterationLoop : public IterationLoopBase
                 return false;
             }
             // src is valid
-            if (results[src] == 0)
+            if (flags[src] == 0)
+                return false;
+            if (src > dest)
                 return false;
             // 1 way look-ahead
             if (subgraphs[dest] < NG[counter[0] * 2 + 1])
                 return false;
-            flags[src] = true;
+
+            flags[src] = false;
+            flags[dest] = true;
             return true;
         };
         // Compute number of triangles for each edge and atomicly add the count to each node, then divided by 2
@@ -213,6 +206,7 @@ struct SMIterationLoop : public IterationLoopBase
                 oprtr_parameters, advance_op));
         }
 
+//        frontier.queue_reset = false;
         for (int iter = 0; iter < nodes_query; ++iter) {
             // set counter to be equal to iter
             GUARD_CU(counter.ForAll([iter]
@@ -227,13 +221,14 @@ struct SMIterationLoop : public IterationLoopBase
                 oprtr_parameters, prune_op));
 
             if (iter > 0) {
+/*                printf("RESET:%d\n", frontier.queue_reset);
                 // Initialize flags to be composed of 0
                 GUARD_CU(flags.ForAll([]
                     __device__ (bool *flags_, const SizeT & v)
                     {
                         flags_[v] = false;
                     }, graph.nodes, target, stream));
-
+*/
                 GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
                     graph.csr(), complete_graph, complete_graph,
                     oprtr_parameters, look_ahead_op));
@@ -250,6 +245,7 @@ struct SMIterationLoop : public IterationLoopBase
             pointer_head += num_subs.GetPointer(util::HOST)[0];
             indices.Print();
             num_subs.Print();
+            partial.Print();
         }
 
         return retval;
