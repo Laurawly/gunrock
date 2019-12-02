@@ -73,8 +73,7 @@ struct SMIterationLoop : public IterationLoopBase
         auto         &constrain          =   data_slice.constrain;
         auto         &isValid            =   data_slice.isValid;
         auto         &NG                 =   data_slice.NG;
-        auto         &NG_src             =   data_slice.NG_src;
-        auto         &NG_dest            =   data_slice.NG_dest;
+        auto         &NT                 =   data_slice.NT;
         auto         &query_ro           =   data_slice.query_ro;
         auto         &query_ci           =   data_slice.query_ci;
         auto         &counter            =   data_slice.counter;
@@ -142,8 +141,8 @@ struct SMIterationLoop : public IterationLoopBase
             return true;
         };
 
-        NG_src.Print();
-        NG_dest.Print();
+        NG.Print();
+        NT.Print();
         auto prune_op = [subgraphs, isValid, NG, query_ro, query_ci, flags, counter, results, nodes_data] __host__ __device__(
             const VertexT &src, VertexT &dest, const SizeT &edge_id,
             const VertexT &input_item, const SizeT &input_pos,
@@ -165,7 +164,6 @@ struct SMIterationLoop : public IterationLoopBase
                     return false;
                 }
                 flags[src] = true;
-		results[src] = 1;
                 return true;
             } else {
                 // check if src belongs to partial results
@@ -174,15 +172,16 @@ struct SMIterationLoop : public IterationLoopBase
                 if (subgraphs[dest] < (query_ro[query_id + 1] - query_ro[query_id]))
                     return false;
                 // 1 way look ahead to be done in filter
-		results[dest] = 1;
                 return true;
             }
         };
-        auto look_ahead_op = [isValid, flags, results, NG, counter, subgraphs, nodes_data] __host__ __device__(
+        auto look_ahead_op = [isValid, flags, results, NG, NT, counter, subgraphs, nodes_data] __host__ __device__(
             const VertexT &src, VertexT &dest, const SizeT &edge_id,
             const VertexT &input_item, const SizeT &input_pos,
             SizeT &output_pos) -> bool
         {
+            VertexT query_id = NG[counter[0] * 2];
+            SizeT min_degree = NG[counter[0] * 2 + 1];
             if (src >= nodes_data)
                 return false;
             if ((!isValid[src]) || (!isValid[dest])) {
@@ -194,9 +193,12 @@ struct SMIterationLoop : public IterationLoopBase
             if (src > dest)
                 return false;
             // 1 way look-ahead
-            if (subgraphs[dest] < NG[counter[0] * 2 + 1])
+            if (subgraphs[dest] < min_degree)
                 return false;
-
+            // check non-tree edges
+            if (NT[query_id] < query_id) {
+                
+            }
             flags[src] = false;
             flags[dest] = true;
             return true;
@@ -219,7 +221,6 @@ struct SMIterationLoop : public IterationLoopBase
                 graph.csr(), frontier.V_Q(), frontier.Next_V_Q(),
                 oprtr_parameters, advance_op));
         }
-        subgraphs.Print();
 
         frontier.queue_reset = false;
         for (int iter = 0; iter < nodes_query; ++iter) {
@@ -245,7 +246,7 @@ struct SMIterationLoop : public IterationLoopBase
                     }, graph.nodes, target, stream));
 */
                 GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
-                    graph.csr(), complete_graph, complete_graph,
+                    graph.csr(), frontier.V_Q(), frontier.Next_V_Q(),
                     oprtr_parameters, look_ahead_op));
             }
 
