@@ -82,8 +82,10 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
         util::Array1D<SizeT, SizeT  >    num_subs;     /** < Used for counting subgraphs   */
         util::Array1D<SizeT, SizeT  >    results;      /** < Used for gpu results   */
         util::Array1D<SizeT, SizeT  >    constrain;    /** < Smallest degree in query graph   */
-        util::Array1D<SizeT, VertexT>    NG;           /** < Used for query node explore seq  */
-        util::Array1D<SizeT, int    >    NT;           /** < Used for query node non-tree edge info */
+        util::Array1D<SizeT, VertexT>    NS;           /** < Used for query node explore seq  */
+        util::Array1D<SizeT, int    >    NN;           /** < Used for NS's tree neighbor based on previously visited NS*/
+        util::Array1D<SizeT, int    >    NT;           /** < Used for query node non-tree edge node info */
+        util::Array1D<SizeT, SizeT  >    NT_offset;    /** < Used for query node non-tree edge node offset info, one node could have multiple non-tree edges */
         util::Array1D<SizeT, VertexT>    partial;      /** < Used for storing partial results */
         util::Array1D<SizeT, bool   >    flags;  /** < Used for storing compacted src nodes */
         util::Array1D<SizeT, VertexT>    indices;         /** < Used for storing intermediate flag val */
@@ -106,8 +108,10 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
             num_subs        .SetName("num_subs");
             results         .SetName("results");
             constrain       .SetName("constrain");
-            NG              .SetName("NG");
+            NS              .SetName("NS");
+            NN              .SetName("NN");
             NT              .SetName("NT");
+            NT_offset       .SetName("NT_offset");
             partial         .SetName("partial");
             flags           .SetName("flags");
             indices         .SetName("indices");
@@ -143,8 +147,10 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
             GUARD_CU(num_subs       .Release(target));
             GUARD_CU(results        .Release(target));
             GUARD_CU(constrain      .Release(target));
-            GUARD_CU(NG             .Release(target));
+            GUARD_CU(NS             .Release(target));
+            GUARD_CU(NN             .Release(target));
             GUARD_CU(NT             .Release(target));
+            GUARD_CU(NT_offset      .Release(target));
             GUARD_CU(partial        .Release(target));
             GUARD_CU(flags          .Release(target));
             GUARD_CU(indices        .Release(target));
@@ -183,8 +189,10 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
             GUARD_CU(num_subs       .Allocate(1, util::HOST | util::DEVICE));
             GUARD_CU(results        .Allocate(sub_graph.nodes, util::HOST | util::DEVICE));
             GUARD_CU(constrain      .Allocate(1, util::HOST | util::DEVICE));
-            GUARD_CU(NG             .Allocate(2 * num_query_node, util::HOST | util::DEVICE));
-            GUARD_CU(NT             .Allocate(num_query_node, util::HOST | util::DEVICE));
+            GUARD_CU(NS             .Allocate(num_query_node, util::HOST | util::DEVICE));
+            GUARD_CU(NN             .Allocate(num_query_node, util::HOST | util::DEVICE));
+            GUARD_CU(NT             .Allocate(num_query_edge, util::HOST | util::DEVICE));
+            GUARD_CU(NT_offset      .Allocate(num_query_node, util::HOST | util::DEVICE));
             // partial results storage: as much as possible
             GUARD_CU(partial        .Allocate(num_query_node * sub_graph.edges,  util::DEVICE));
             GUARD_CU(flags          .Allocate(sub_graph.nodes,  util::DEVICE));
