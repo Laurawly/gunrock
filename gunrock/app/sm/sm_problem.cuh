@@ -189,7 +189,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
             GUARD_CU(num_subs       .Allocate(1, util::HOST | util::DEVICE));
             GUARD_CU(results        .Allocate(sub_graph.nodes, util::HOST | util::DEVICE));
             GUARD_CU(constrain      .Allocate(1, util::HOST | util::DEVICE));
-            GUARD_CU(NS             .Allocate(num_query_node, util::HOST | util::DEVICE));
+            GUARD_CU(NS             .Allocate(2 * num_query_node, util::HOST | util::DEVICE));
             GUARD_CU(NN             .Allocate(num_query_node, util::HOST | util::DEVICE));
             GUARD_CU(NT             .Allocate(num_query_edge, util::HOST | util::DEVICE));
             GUARD_CU(NT_offset      .Allocate(num_query_node, util::HOST | util::DEVICE));
@@ -251,19 +251,25 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
 
             int count = 0;
             for (int i = 0; i < num_query_node; ++i) {
+                NT[i] = -1;
                 NN[i] = -1;
-                if (i == 0) NT_offset[i] = 1;
+            }
+            for (int i = 0; i < num_query_node; ++i) {
+                if (i == 0) NT_offset[i] = 0;
                 else NT_offset[i] = NT_offset[i-1];
-                for (j = 0; j < i; ++j) {
-                   for (int n = query_graph.row_offsets[i]; n < query_graph.row_offsets[i + 1]; ++n) {
-                     if (query_graph.column_indices[n] == j) {
-                        if (NN[i] == -1) NN[i] = j;
-                        else {
-                            NT[count++] = j;
-                            NT_offset[i]++;
-                        }
+                // for each neighbor of i, traveres previously visited NS, see if any is its neighbor
+                for (int j = 0; j < i; ++j) {
+                    for (int n = query_graph.row_offsets[NS[i]]; n < query_graph.row_offsets[NS[i] + 1]; ++n) {
+                        if (query_graph.column_indices[n] == NS[j]) {
+                            // we assume the first neigboring NS a tree-neighbor
+                            if (NN[i] == -1) NN[i] = NS[j];
+                            // others non-tree neighbors
+                            else {
+                                NT[count++] = NS[j];
+                                NT_offset[i]++;
+                            }
+                         }
                      }
-                   }
                 }
             }
 

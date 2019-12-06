@@ -147,7 +147,7 @@ struct SMIterationLoop : public IterationLoopBase
         NN.Print();
         NT.Print();
         NT_offset.Print();
-        auto prune_op = [subgraphs, isValid, NS, query_ro, query_ci, flags, counter, results, nodes_data] __host__ __device__(
+        auto prune_op = [subgraphs, isValid, NS, query_ro, query_ci, flags, counter, results, nodes_data, nodes_query] __host__ __device__(
             const VertexT &src, VertexT &dest, const SizeT &edge_id,
             const VertexT &input_item, const SizeT &input_pos,
             SizeT &output_pos) -> bool
@@ -179,7 +179,7 @@ struct SMIterationLoop : public IterationLoopBase
                 return true;
             }
         };
-        auto look_ahead_op = [isValid, flags, results, NS, NT, counter, subgraphs, nodes_data] __host__ __device__(
+        auto look_ahead_op = [isValid, flags, results, NS, NT, counter, subgraphs, nodes_data, nodes_query] __host__ __device__(
             const VertexT &src, VertexT &dest, const SizeT &edge_id,
             const VertexT &input_item, const SizeT &input_pos,
             SizeT &output_pos) -> bool
