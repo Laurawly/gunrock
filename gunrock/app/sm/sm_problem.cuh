@@ -238,8 +238,8 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
                         }
                     }
                 }
-                // put the node index with max degree in NG, and mark that node as solved -1, and add priority to its neighbors
-                NG[i] = index;
+                // put the node index with max degree in NS, and mark that node as solved -1, and add priority to its neighbors
+                NS[i] = index;
                 d_m[index] = -1;
                 for(int j = query_graph.row_offsets[index]; j < query_graph.row_offsets[index + 1]; ++j)
                     if(d_m[query_graph.column_indices[j]] != -1)
@@ -249,39 +249,28 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
             delete[] d_m;
             delete[] query_degree;
 
-            bool *node_visited = new bool[num_query_node];
-            bool *edge_visited = new bool[num_query_node * num_query_node];
-            memset(node_visited, false, sizeof(bool) * num_query_node);
-            memset(edge_visited, false, sizeof(bool) * num_query_node * num_query_node);
-            // fill in query graph non-tree edges info for each node, if no non-tree edge, fill with -1
-            for (int i = 0; i < num_query_node; ++i)
-                NT[i] = -1;
-            for (int id = 0; id < num_query_node; ++id) {
-                int src = NG[id];
-                node_visited[src] = true;
-                for (int idx = query_graph.row_offsets[src]; idx < query_graph.row_offsets[src + 1]; ++idx) {
-                    int dest = query_graph.column_indices[idx];
-                    if (edge_visited[src * num_query_node + dest]) continue;
-                    edge_visited[src * num_query_node + dest] = true;
-                    edge_visited[dest * num_query_node + src] = true;
-                    if (node_visited[dest]) {
-                        // This is a non-tree edge, store dest into NT[src], store src into NT[dest]
-                        NT[src] = dest;
-                        NT[dest] = src;
-                    }
-                    node_visited[dest] = true;
+            int count = 0;
+            for (int i = 0; i < num_query_node; ++i) {
+                NN[i] = -1;
+                if (i == 0) NT_offset[i] = 1;
+                else NT_offset[i] = NT_offset[i-1];
+                for (j = 0; j < i; ++j) {
+                   for (int n = query_graph.row_offsets[i]; n < query_graph.row_offsets[i + 1]; ++n) {
+                     if (query_graph.column_indices[n] == j) {
+                        if (NN[i] == -1) NN[i] = j;
+                        else {
+                            NT[count++] = j;
+                            NT_offset[i]++;
+                        }
+                     }
+                   }
                 }
             }
-            delete[] node_visited;
-            delete[] edge_visited;
 
-            // Add 1 look ahead info: each query node's neighbors' min degree in the pos of (query_node_id, min_degree)
-            // rearange NG pos
-            for (int i = query_graph.nodes - 1; i >= 0; --i) {
-                NG[i * 2] = NG[i];
-            }
+            // Add 1 look ahead info: each query node's neighbors' min degree in the pos of (index + num_query_node, min_degree)
+            // where index is the sequence id of each query node in NS
             for (int i = 0; i < query_graph.nodes; ++i) {
-                VertexT src = NG[i * 2];
+                VertexT src = NS[i];
                 int min_degree = INT_MAX;
                 for (int j = query_graph.row_offsets[src]; j < query_graph.row_offsets[src + 1]; ++j) {
                     VertexT dest = query_graph.column_indices[j];
@@ -289,11 +278,13 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
                         min_degree = query_graph.row_offsets[dest + 1] - query_graph.row_offsets[dest];
                     }
                 }
-                NG[i * 2 + 1] = min_degree;
+                NS[i + num_query_node] = min_degree;
             }
 
-            GUARD_CU(NG.Move(util::HOST, target));
+            GUARD_CU(NS.Move(util::HOST, target));
+            GUARD_CU(NN.Move(util::HOST, target));
             GUARD_CU(NT.Move(util::HOST, target));
+            GUARD_CU(NT_offset.Move(util::HOST, target));
             GUARD_CU(constrain.Move(util::HOST, target));
             // Initialize query row offsets with query_graph.row_offsets
             GUARD_CU(query_ro.ForAll([query_graph] 

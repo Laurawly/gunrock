@@ -72,8 +72,10 @@ struct SMIterationLoop : public IterationLoopBase
         auto         &subgraphs          =   data_slice.subgraphs;
         auto         &constrain          =   data_slice.constrain;
         auto         &isValid            =   data_slice.isValid;
-        auto         &NG                 =   data_slice.NG;
+        auto         &NS                 =   data_slice.NS;
+        auto         &NN                 =   data_slice.NN;
         auto         &NT                 =   data_slice.NT;
+        auto         &NT_offset          =   data_slice.NT_offset;
         auto         &query_ro           =   data_slice.query_ro;
         auto         &query_ci           =   data_slice.query_ci;
         auto         &counter            =   data_slice.counter;
@@ -141,9 +143,11 @@ struct SMIterationLoop : public IterationLoopBase
             return true;
         };
 
-        NG.Print();
+        NS.Print();
+        NN.Print();
         NT.Print();
-        auto prune_op = [subgraphs, isValid, NG, query_ro, query_ci, flags, counter, results, nodes_data] __host__ __device__(
+        NT_offset.Print();
+        auto prune_op = [subgraphs, isValid, NS, query_ro, query_ci, flags, counter, results, nodes_data] __host__ __device__(
             const VertexT &src, VertexT &dest, const SizeT &edge_id,
             const VertexT &input_item, const SizeT &input_pos,
             SizeT &output_pos) -> bool
@@ -152,9 +156,9 @@ struct SMIterationLoop : public IterationLoopBase
                 return false;
             if ((!isValid[src]) || (!isValid[dest]))
                 return false;
-            // NG has query node id sequence in its even pos; min degree of neighbors in odd pos
-            VertexT query_id = NG[counter[0] * 2];
-            SizeT min_degree = NG[counter[0] * 2 + 1];
+            // NS has query node id sequence from pos 0 to pos nodes_query - 1; min degree of neighbors from pos nodes_query to end
+            VertexT query_id = NS[counter[0]];
+            SizeT min_degree = NS[counter[0] + nodes_query];
             // special init for first iteration
             if (counter[0] == 0) {
                 if (subgraphs[src] < (query_ro[query_id + 1] - query_ro[query_id]))
@@ -175,13 +179,13 @@ struct SMIterationLoop : public IterationLoopBase
                 return true;
             }
         };
-        auto look_ahead_op = [isValid, flags, results, NG, NT, counter, subgraphs, nodes_data] __host__ __device__(
+        auto look_ahead_op = [isValid, flags, results, NS, NT, counter, subgraphs, nodes_data] __host__ __device__(
             const VertexT &src, VertexT &dest, const SizeT &edge_id,
             const VertexT &input_item, const SizeT &input_pos,
             SizeT &output_pos) -> bool
         {
-            VertexT query_id = NG[counter[0] * 2];
-            SizeT min_degree = NG[counter[0] * 2 + 1];
+            VertexT query_id = NS[counter[0]];
+            SizeT min_degree = NS[counter[0] + nodes_query];
             if (src >= nodes_data)
                 return false;
             if ((!isValid[src]) || (!isValid[dest])) {
@@ -196,9 +200,6 @@ struct SMIterationLoop : public IterationLoopBase
             if (subgraphs[dest] < min_degree)
                 return false;
             // check non-tree edges
-            if (NT[query_id] < query_id) {
-                
-            }
             flags[src] = false;
             flags[dest] = true;
             return true;
