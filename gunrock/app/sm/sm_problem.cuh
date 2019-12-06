@@ -87,7 +87,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
         util::Array1D<SizeT, int    >    NT;           /** < Used for query node non-tree edge node info */
         util::Array1D<SizeT, SizeT  >    NT_offset;    /** < Used for query node non-tree edge node offset info, one node could have multiple non-tree edges */
         util::Array1D<SizeT, VertexT>    partial;      /** < Used for storing partial results */
-        util::Array1D<SizeT, bool   >    flags;  /** < Used for storing compacted src nodes */
+        util::Array1D<SizeT, VertexT>    flags;  /** < Used for storing compacted src nodes */
         util::Array1D<SizeT, VertexT>    indices;         /** < Used for storing intermediate flag val */
         SizeT    nodes_query;      /** < Used for number of query nodes */
         SizeT    num_matches;      /** < Used for number of matches in the result */
@@ -192,7 +192,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
             GUARD_CU(NS             .Allocate(2 * num_query_node, util::HOST | util::DEVICE));
             GUARD_CU(NN             .Allocate(num_query_node, util::HOST | util::DEVICE));
             GUARD_CU(NT             .Allocate(num_query_edge, util::HOST | util::DEVICE));
-            GUARD_CU(NT_offset      .Allocate(num_query_node, util::HOST | util::DEVICE));
+            GUARD_CU(NT_offset      .Allocate(num_query_node + 1, util::HOST | util::DEVICE));
             // partial results storage: as much as possible
             GUARD_CU(partial        .Allocate(num_query_node * sub_graph.edges,  util::DEVICE));
             GUARD_CU(flags          .Allocate(sub_graph.nodes,  util::DEVICE));
@@ -254,9 +254,10 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
                 NT[i] = -1;
                 NN[i] = -1;
             }
+            NT_offset[0] = 0;
             for (int i = 0; i < num_query_node; ++i) {
-                if (i == 0) NT_offset[i] = 0;
-                else NT_offset[i] = NT_offset[i-1];
+                if (i == 0) NT_offset[i + 1] = 0;
+                else NT_offset[i + 1] = NT_offset[i];
                 // for each neighbor of i, traveres previously visited NS, see if any is its neighbor
                 for (int j = 0; j < i; ++j) {
                     for (int n = query_graph.row_offsets[NS[i]]; n < query_graph.row_offsets[NS[i] + 1]; ++n) {
@@ -266,7 +267,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
                             // others non-tree neighbors
                             else {
                                 NT[count++] = NS[j];
-                                NT_offset[i]++;
+                                NT_offset[i + 1]++;
                             }
                          }
                      }
@@ -302,7 +303,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG>
 	        [] __device__(bool * x, const SizeT &pos) { x[pos] = true; },
 		sub_graph.nodes, target, this->stream));
 	    GUARD_CU(flags.ForAll(
-	        [] __device__(bool * x, const SizeT &pos) { x[pos] = false; },
+	        [] __device__(VertexT * x, const SizeT &pos) { x[pos] = 0; },
 		sub_graph.nodes, target, this->stream));
 	    GUARD_CU(indices.ForAll(
 	        [] __device__(VertexT * x, const SizeT &pos) { x[pos] = pos; },

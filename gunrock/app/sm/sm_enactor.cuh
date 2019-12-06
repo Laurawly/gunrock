@@ -167,11 +167,11 @@ struct SMIterationLoop : public IterationLoopBase
                 if (subgraphs[dest] < min_degree) {
                     return false;
                 }
-                flags[src] = true;
+                flags[src] = 1;
                 return true;
             } else {
                 // check if src belongs to partial results
-                if (!flags[src])
+                if (flags[src] == 0)
                     return false;
                 if (subgraphs[dest] < (query_ro[query_id + 1] - query_ro[query_id]))
                     return false;
@@ -199,9 +199,8 @@ struct SMIterationLoop : public IterationLoopBase
             // 1 way look-ahead
             if (subgraphs[dest] < min_degree)
                 return false;
-            // check non-tree edges
-            flags[src] = false;
-            flags[dest] = true;
+            flags[src] = 0;
+            flags[dest] = src + 1;
             return true;
         };
         // Compute number of triangles for each edge and atomicly add the count to each node, then divided by 2
@@ -213,8 +212,6 @@ struct SMIterationLoop : public IterationLoopBase
             return true;
         };
 
-//        frontier.queue_length = graph.edges;
-//        frontier.queue_reset = true;
         size_t pointer_head = 0;
         // first iteration, filter by basic constrain, and update valid degree, could run multiple iterations to do more filter
         for (int iter = 0; iter < 1; ++iter) {
@@ -223,6 +220,7 @@ struct SMIterationLoop : public IterationLoopBase
                 oprtr_parameters, advance_op));
         }
 
+        // used filtered graph
         frontier.queue_reset = false;
         for (int iter = 0; iter < nodes_query; ++iter) {
             // set counter to be equal to iter
@@ -250,6 +248,8 @@ struct SMIterationLoop : public IterationLoopBase
                     graph.csr(), frontier.V_Q(), frontier.Next_V_Q(),
                     oprtr_parameters, look_ahead_op));
             }
+            // We can check non-tree edges now
+            if (iter > 1) {}
 
             flags.Print();
             GUARD_CU(util::CUBSelect_flagged(
