@@ -77,10 +77,10 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
     auto &counter = data_slice.counter;
     auto &flags_read = data_slice.flags_read;
     auto &flags_write = data_slice.flags_write;
-    auto &indices = data_slice.indices;
+    //auto &indices = data_slice.indices;
     //    auto &partial = data_slice.partial;
     auto &value = data_slice.value;
-    auto &results = data_slice.results;
+    //auto &results = data_slice.results;
     auto &row_offsets = graph.CsrT::row_offsets;
     auto &col_indices = graph.CsrT::column_indices;
     auto &frontier = enactor_slice.frontier;
@@ -350,14 +350,15 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
       flags_write.Print();
     }  // flags_write contains final results
 
-    GUARD_CU(counter.ForAll(
+   /* GUARD_CU(counter.ForAll(
       [] __host__ __device__(VertexT * counter_, const SizeT &pos) {
         counter_[pos] = 0;
       },
       1, target, stream))
 
     // Compact all combinations to results by pos values
-    GUARD_CU(util::CUBSelect_flagged(
+    // TODO: not working
+   GUARD_CU(util::CUBSelect_flagged(
       indices.GetPointer(util::DEVICE),
       flags_write.GetPointer(util::DEVICE),
       results.GetPointer(util::DEVICE),
@@ -365,7 +366,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
       nodes_data));
     indices.Print();
     results.Print();
-    counter.Print();
+    counter.Print();*/
     return retval;
   }
 

@@ -75,7 +75,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
     util::Array1D<SizeT, bool> write_to;   /** < Used for store write info */
     util::Array1D<SizeT, SizeT> counter;  /** < Used for iteration recording */
     util::Array1D<SizeT, SizeT> value;    /** < Used for position recording */
-    util::Array1D<SizeT, SizeT> results;  /** < Used for gpu results   */
+    //util::Array1D<SizeT, SizeT> results;  /** < Used for gpu results   */
     util::Array1D<SizeT, SizeT>
         constrain;                    /** < Smallest degree in query graph   */
     util::Array1D<SizeT, VertexT> NS; /** < Used for query node explore seq  */
@@ -92,8 +92,8 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
         flags_read; /** < Used for storing compacted src nodes */
     util::Array1D<SizeT, bool>
         flags_write; /** < Used for storing compacted src nodes */
-    util::Array1D<SizeT, VertexT>
-        indices;       /** < Used for storing intermediate flag val */
+    //util::Array1D<SizeT, VertexT>
+    //    indices;       /** < Used for storing intermediate flag val */
     SizeT nodes_query; /** < Used for number of query nodes */
     SizeT num_matches; /** < Used for number of matches in the result */
 
@@ -111,7 +111,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       write_to.SetName("write_to");
       counter.SetName("counter");
       value.SetName("value");
-      results.SetName("results");
+      //.SetName("results");
       constrain.SetName("constrain");
       NS.SetName("NS");
       NN.SetName("NN");
@@ -120,7 +120,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       //      partial.SetName("partial");
       flags_read.SetName("flags_read");
       flags_write.SetName("flags_write");
-      indices.SetName("indices");
+      //indices.SetName("indices");
       nodes_query = 0;
       num_matches = 0;
     }
@@ -147,7 +147,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       GUARD_CU(write_to.Release(target));
       GUARD_CU(counter.Release(target));
       GUARD_CU(value.Release(target));
-      GUARD_CU(results.Release(target));
+      //GUARD_CU(results.Release(target));
       GUARD_CU(constrain.Release(target));
       GUARD_CU(NS.Release(target));
       GUARD_CU(NN.Release(target));
@@ -156,7 +156,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       //      GUARD_CU(partial.Release(target));
       GUARD_CU(flags_read.Release(target));
       GUARD_CU(flags_write.Release(target));
-      GUARD_CU(indices.Release(target));
+      //GUARD_CU(indices.Release(target));
       GUARD_CU(BaseDataSlice ::Release(target));
       return retval;
     }
@@ -188,7 +188,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       GUARD_CU(write_to.Allocate(sub_graph.nodes, util::DEVICE));
       GUARD_CU(counter.Allocate(1, util::HOST | util::DEVICE));
       GUARD_CU(value.Allocate(1, util::HOST | util::DEVICE));
-      GUARD_CU(results.Allocate(sub_graph.nodes * sub_graph.edges, util::HOST | util::DEVICE));
+      //GUARD_CU(results.Allocate(sub_graph.nodes * sub_graph.edges, util::HOST | util::DEVICE));
       GUARD_CU(constrain.Allocate(1, util::HOST | util::DEVICE));
       GUARD_CU(NS.Allocate(2 * num_query_node, util::HOST | util::DEVICE));
       GUARD_CU(NN.Allocate(num_query_node, util::HOST | util::DEVICE));
@@ -200,7 +200,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       //                                util::DEVICE));
       GUARD_CU(flags_read.Allocate(pow(sub_graph.nodes, num_query_node), util::DEVICE));
       GUARD_CU(flags_write.Allocate(pow(sub_graph.nodes, num_query_node), util::DEVICE));
-      GUARD_CU(indices.Allocate(pow(sub_graph.nodes, num_query_node), util::DEVICE));
+      //GUARD_CU(indices.Allocate(pow(sub_graph.nodes, num_query_node), util::DEVICE));
 
       // Initialize query graph node degree by row offsets
       // neighbor node encoding = sum of neighbor node labels
@@ -329,18 +329,18 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       GUARD_CU(flags_write.ForAll(
           [] __device__(bool * x, const SizeT &pos) { x[pos] = false; },
           pow(sub_graph.nodes, num_query_node), target, this->stream));
-      GUARD_CU(indices.ForAll(
+      /*GUARD_CU(indices.ForAll(
           [] __device__(VertexT * x, const SizeT &pos) { x[pos] = pos; },
-          pow(sub_graph.nodes, num_query_node), target, this->stream));
+          pow(sub_graph.nodes, num_query_node), target, this->stream));*/
       GUARD_CU(data_degree.ForAll(
           [] __device__(SizeT * x, const SizeT &pos) { x[pos] = 0; },
           sub_graph.nodes, target, this->stream));
       GUARD_CU(counter.ForAll(
           [] __device__(SizeT * x, const SizeT &pos) { x[pos] = 0; }, 1, target,
           this->stream));
-      GUARD_CU(results.ForAll(
+      /*GUARD_CU(results.ForAll(
           [] __host__ __device__(SizeT * x, const SizeT &pos) { x[pos] = 0; },
-          sub_graph.nodes * sub_graph.edges, target, this->stream));
+          sub_graph.nodes * sub_graph.edges, target, this->stream));*/
 
       nodes_query = query_graph.nodes;
 
@@ -429,7 +429,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
                       util::Location target = util::DEVICE) {
     cudaError_t retval = cudaSuccess;
     SizeT nodes = this->org_graph->nodes;
-    SizeT edges = this->org_graph->edges;
+    SizeT nodes_query = data_slice.nodes_query;
 
     if (this->num_gpus == 1) {
       auto &data_slice = data_slices[0][0];
@@ -438,7 +438,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       if (target == util::DEVICE) {
         GUARD_CU(util::SetDevice(this->gpu_idx[0]));
 
-        GUARD_CU(data_slice.results.SetPointer(h_subgraphs, nodes * edges, util::HOST));
+        GUARD_CU(data_slice.flags_write.SetPointer(h_subgraphs, nodes * edges, util::HOST));
         GUARD_CU(data_slice.results.Move(util::DEVICE, util::HOST));
       } else if (target == util::HOST) {
         GUARD_CU(data_slice.results.ForEach(
