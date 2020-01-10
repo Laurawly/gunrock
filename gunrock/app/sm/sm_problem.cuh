@@ -16,6 +16,9 @@
 
 #include <gunrock/app/problem_base.cuh>
 #include <gunrock/app/sm/sm_test.cuh>
+#include <vector>
+#include <string>
+#include <algorithm>
 
 namespace gunrock {
 namespace app {
