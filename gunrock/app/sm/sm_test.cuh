@@ -187,25 +187,33 @@ typename GraphT::SizeT Validate_Results(util::Parameters &parameters,
 
   std::cerr << "Validate_Results" << std::endl;
   bool quiet = parameters.Get<bool>("quiet");
-  if (!quiet && verbose) {
+  /*if (!quiet && verbose) {
     for (int i = 0; i < data_graph.nodes; i++) {
       std::cerr << i << " " << ref_subgraphs[i] << " " << h_subgraphs[i]
                 << std::endl;
     }
-  }
-
-  for (SizeT v =0; v < data_graph.nodes; v++) {
+  }*/
+  // now ref_subgraphs and h_subgraphs only contains number of subgraphs
+  if (!quiet && verbose) {
+    for (int i = 0; i < 1; i++) {
+      std::cerr << i << " " << ref_subgraphs[i] << " " << h_subgraphs[i]
+                << std::endl;
+    }
+  /*for (SizeT v =0; v < data_graph.nodes; v++) {
     (*num_subgraphs) += h_subgraphs[v];
   }
-  *num_subgraphs = *num_subgraphs / query_graph.nodes;
+  *num_subgraphs = *num_subgraphs / query_graph.nodes;*/
+  *num_subgraphs = h_subgraphs[0];
 
   SizeT num_errors = 0;
 
   // Verify the result
   util::PrintMsg("Subgraph Matching Validity: ", !quiet, false);
-  num_errors = util::CompareResults(h_subgraphs, ref_subgraphs,
-                                    data_graph.nodes, true, quiet);
+  //num_errors = util::CompareResults(h_subgraphs, ref_subgraphs,
+  //                                  data_graph.nodes, true, quiet);
 
+  num_errors = util::CompareResults(h_subgraphs, ref_subgraphs,
+                                    1, true, quiet);
   if (num_errors > 0) {
     util::PrintMsg(std::to_string(num_errors) + " errors occurred.", !quiet);
     return num_errors;

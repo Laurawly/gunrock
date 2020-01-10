@@ -430,6 +430,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
     cudaError_t retval = cudaSuccess;
     SizeT nodes = this->org_graph->nodes;
     SizeT nodes_query = data_slice.nodes_query;
+    VertexT *h_results = new VertexT[pow(nodes, nodes_query)];
 
     if (this->num_gpus == 1) {
       auto &data_slice = data_slices[0][0];
@@ -438,15 +439,15 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       if (target == util::DEVICE) {
         GUARD_CU(util::SetDevice(this->gpu_idx[0]));
 
-        GUARD_CU(data_slice.flags_write.SetPointer(h_subgraphs, nodes * edges, util::HOST));
-        GUARD_CU(data_slice.results.Move(util::DEVICE, util::HOST));
+        GUARD_CU(data_slice.flags_write.SetPointer(h_results, pow(nodes, nodes_query), util::HOST));
+        GUARD_CU(data_slice.flags_write.Move(util::DEVICE, util::HOST));
       } else if (target == util::HOST) {
-        GUARD_CU(data_slice.results.ForEach(
-            h_subgraphs,
+        GUARD_CU(data_slice.flags_write.ForEach(
+            h_results,
             [] __host__ __device__(const VertexT &d_x, VertexT &h_x) {
               h_x = d_x;
             },
-            nodes * edges, util::HOST));
+            pow(nodes, nodes_query), util::HOST));
       }
     } else {  // num_gpus != 1
 
@@ -486,7 +487,27 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       // GUARD_CU(th_subgraphs.Release());
       // GUARD_CU(th_nodes     .Release());
     }  // end if
-
+    // further extract combination from h_results to h_subgraphs
+    vector<vector<int>> combinations;
+    for (int i = 0; i < pow(nodes, nodes_query); ++i) {
+      if (h_results[i]) {
+        int key = i;
+        int stride = pow(nodes, nodes_query);
+        vector<int> combination;
+        for (int j = 0; j < nodes_query; ++j) {
+          stride = stride / nodes;
+          int elem = key / stride;
+          combination.push_back(elem);
+          key = key - elem * stride;
+        }
+        std::sort (combination.begin(), combination.end());
+        combinations.push_back(combination);
+      }
+    }
+    vector<vector<int> >::iterator itr = unique(combinations.begin(), combinations.end());
+    combinations.resize(combinations.begin(), itr);
+    h_subgraphs[0] = combinations.size();
+    //TODO: export combinations to output
     return retval;
   }
 
