@@ -296,7 +296,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
             counter_[pos] = iter;
           },
           1, target, stream));
-      counter.Print();
+      //counter.Print();
       // First iteration
       if (iter == 0) {
         GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
@@ -327,7 +327,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
                 value_[pos] = val;
               },
               1, target, stream));
-          value.Print();
+          //value.Print();
           // reset write_to
           GUARD_CU(write_to.ForAll(
               [] __device__(bool *x, const SizeT &pos) { x[pos] = false; },
@@ -339,7 +339,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
               prune_op));
           GUARD_CU2(cudaStreamSynchronize(stream),
                     "cudaStreamSynchronize failed");
-          write_to.Print();
+          //write_to.Print();
 
           GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
               graph.csr(), complete_graph, complete_graph, oprtr_parameters,
@@ -347,7 +347,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
           // flags_write.Print();
         }
       }
-      flags_write.Print();
+      //flags_write.Print();
     }  // flags_write contains final results
 
    /* GUARD_CU(counter.ForAll(
