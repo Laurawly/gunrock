@@ -432,11 +432,11 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
                       util::Location target = util::DEVICE) {
     cudaError_t retval = cudaSuccess;
     SizeT nodes = this->org_graph->nodes;
-    SizeT nodes_query = data_slice.nodes_query;
-    VertexT *h_results = new VertexT[pow(nodes, nodes_query)];
 
     if (this->num_gpus == 1) {
       auto &data_slice = data_slices[0][0];
+      SizeT nodes_query = data_slice.nodes_query;
+      bool *h_results = new bool[pow(nodes, nodes_query)];
 
       // Set device
       if (target == util::DEVICE) {
@@ -449,8 +449,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
             h_results,
             [] __host__ __device__(const VertexT &d_x, VertexT &h_x) {
               h_x = d_x;
-            },
-            pow(nodes, nodes_query), util::HOST));
+            }, pow(nodes, nodes_query), util::HOST));
       }
     } else {  // num_gpus != 1
 
