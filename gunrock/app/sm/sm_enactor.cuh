@@ -316,7 +316,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
             pow(nodes_data, nodes_query), target, stream));
 
         int total = 1;
-        for (int i = 0; i < counter[0]; ++i) {
+        for (int i = 0; i < iter; ++i) {
           total = total * nodes_data;
         }
         printf("=============total:%d=============\n", total);
