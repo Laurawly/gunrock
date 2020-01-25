@@ -306,6 +306,12 @@ typename GraphT::SizeT Validate_Results(util::Parameters &parameters,
   num_errors = util::CompareResults(h_subgraphs, ref_subgraphs, 1, true, quiet);
 
   if (num_errors > 0) {
+    util::PrintMsg(
+        "If you are using default reference, the referene code is only for "
+        "triangle counting. The reference results can be wrong depanding on "
+        "your test cases. If you want to get the correct reference results, "
+        "please turn use_boost = 1 in ../BaseMakefile.mk.",
+        !quiet);
     util::PrintMsg(std::to_string(num_errors) + " errors occurred.", !quiet);
     return num_errors;
   } else {
