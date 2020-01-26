@@ -66,7 +66,6 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
     auto &subgraphs = data_slice.subgraphs;
     auto &constrain = data_slice.constrain;
     auto &isValid = data_slice.isValid;
-    auto &write_to = data_slice.write_to;
     auto &NS = data_slice.NS;
     auto &NN = data_slice.NN;
     auto &NT = data_slice.NT;
@@ -78,7 +77,6 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
     auto &indices = data_slice.indices;
     auto &results = data_slice.results;
     auto &flags_write = data_slice.flags_write;
-    auto &value = data_slice.value;
     auto &row_offsets = graph.CsrT::row_offsets;
     auto &col_indices = graph.CsrT::column_indices;
     auto &oprtr_parameters = enactor_slice.oprtr_parameters;
@@ -115,13 +113,13 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
       }
       return false;
     };  // advance_op
-    auto prune_op =
-        [subgraphs, row_offsets, col_indices, isValid, write_to, NS, NN, NT,
-         NT_offset, query_ro, query_ci, flags_write, counter, value,
-         results, temp_count, nodes_data, nodes_query] __host__
-        __device__(const VertexT &src, VertexT &dest, const SizeT &edge_id,
-                   const VertexT &input_item, const SizeT &input_pos,
-                   SizeT &output_pos) -> bool {
+    auto prune_op = [subgraphs, row_offsets, col_indices, isValid, NS, NN, NT,
+                     NT_offset, query_ro, query_ci, flags_write, counter,
+                     results, temp_count, nodes_data, nodes_query] __host__
+                    __device__(const VertexT &src, VertexT &dest,
+                               const SizeT &edge_id, const VertexT &input_item,
+                               const SizeT &input_pos,
+                               SizeT &output_pos) -> bool {
       if (src < 0 || src >= nodes_data) return false;
       if ((!isValid[src]) || (!isValid[dest])) return false;
       // NS has query node id sequence from pos 0 to pos nodes_query - 1; min
@@ -159,76 +157,57 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
         stride_src = stride_src * n;
       }
       int combination[50];  // 50 is the largest nodes_query value
-      int j = 0;
-      // src is not at nn pos of current combination
-      if (src != (value[0] / stride_src) % n)
-        return false;
-      int i = 0;
-      for (i = 0; i < temp_count[0]; ++i) {
-        if (value[0] == results[i]) break;
-      }
-      // current combination is not part of results
-      if (i >= temp_count[0])
-        return false;
-      // src satisfies, later iterations counter[0] > 0, dest nodes are candidates
-      // check candidates' degrees
-      //printf("src: %d, dest:%d, dest degree:%d, query_id: %d, query degree:%d\n", src, dest, subgraphs[dest], query_id, (query_ro[query_id + 1] - query_ro[query_id]));
-      if (subgraphs[dest] < (query_ro[query_id + 1] - query_ro[query_id]))
-        return false;
-      //if ((src == (value[0] / stride_src) % n) && flags_read[value[0]]) {
-      int stride = total;
-      int temp = value[0];
-      for (j = 0; j < counter[0]; ++j) {
-        stride = stride / n;
-        combination[j] = temp / stride;
-        temp = temp - combination[j] * stride;
-      }
-      //} else {
-      //  return false;
-      //}
-      // First check: check if dest is duplicated with any of the member
-      for (j = 0; j < counter[0]; ++j) {
-        if (dest == combination[j]) break;
-      }
-      if (j < counter[0]) return false;  // dest is a duplicate, aborted
-      // Second check: check if dest has any matched NT
-      for (int k = NT_offset[counter[0]]; k < NT_offset[counter[0] + 1]; ++k) {
-        int nt = NT[k];  // non-tree edge's other node pos in NS
-        // check if dest is connected to nt's node in combination
-        int nt_node = combination[nt];
-        int offset = 0;
-        for (offset = row_offsets[dest]; offset < row_offsets[dest + 1];
-             ++offset) {
-          if (nt_node == col_indices[offset]) break;
-        }
-        if (offset == row_offsets[dest + 1]) {  // dest has no neighbor nt_node
-          return false;  // dest doesn't satisfy nt node connections
-        }
-      }
-      // Checks finished, add dest to combination and write to new flags pos in
-      // write_op
-      write_to[dest] = true;
-      return true;
-    };  // prune_op
+      for (int i = 0; i < temp_count[0]; ++i) {
+        // src is not at nn pos of current combination
+        if (src != (results[i] / stride_src) % n) continue;
+        // src satisfies, later iterations counter[0] > 0, dest nodes are
+        // candidates check candidates' degrees
+        if (subgraphs[dest] < (query_ro[query_id + 1] - query_ro[query_id]))
+          continue;
+        // printf("src: %d, dest:%d, results:%d, dest degree: %d, query
+        // degree:%d\n", src, dest, results[i], subgraphs[dest],
+        // (query_ro[query_id + 1] - query_ro[query_id]));
 
-    auto write_op =
-        [flags_write, write_to, value, temp_count, results, nodes_data, edges_data, nodes_query] __host__ __device__(
-            const VertexT &src, VertexT &dest, const SizeT &edge_id,
-            const VertexT &input_item, const SizeT &input_pos,
-            SizeT &output_pos) -> bool {
-      if (write_to[src]) {
-        int i = 0;
-        for (i = 0; i < temp_count[0]; ++i) {
-          if (value[0] == results[i]) break;
+        // Fill combination with current result[i]'s representation
+        int stride = total;
+        int temp = results[i];
+        int j = 0;
+        for (j = 0; j < counter[0]; ++j) {
+          stride = stride / n;
+          combination[j] = temp / stride;
+          temp = temp - combination[j] * stride;
         }
-        if (i * nodes_data + src > nodes_data * edges_data * nodes_query) {
-          printf("============pos: %d, src:%d, expected: %d, actual size:%d===============\n", i, src, i * nodes_data + src, nodes_data * edges_data * nodes_query);
-          return false;
+        // First check: check if dest is duplicated with any of the member
+        for (j = 0; j < counter[0]; ++j) {
+          if (dest == combination[j]) break;
         }
-        flags_write[i * nodes_data + src] = true;
+        if (j < counter[0]) continue;  // dest is a duplicate, aborted
+
+        // Second check: check if dest has any matched NT
+        int k = 0;
+        for (k = NT_offset[counter[0]]; k < NT_offset[counter[0] + 1]; ++k) {
+          int nt = NT[k];  // non-tree edge's other node pos in NS
+          // check if dest is connected to nt's node in combination
+          int nt_node = combination[nt];
+          int offset = 0;
+          for (offset = row_offsets[dest]; offset < row_offsets[dest + 1];
+               ++offset) {
+            if (nt_node == col_indices[offset]) break;
+          }
+          if (offset >=
+              row_offsets[dest + 1]) {  // dest has no neighbor nt_node
+            break;  // dest doesn't satisfy nt node connections
+          }
+        }
+        if (k <
+            NT_offset[counter[0] + 1]) {  // dest doesn't satisfy all NT edges
+          continue;
+        }
+        // Checks finished, add dest to combination and write to new flags pos
+        flags_write[i * nodes_data + dest] = true;
       }
-      return true;
-    };  // write_op
+      return false;
+    };  // prune_op
 
     // first iteration, filter by basic constrain, and update valid degree,
     // could run multiple iterations to do more filter
@@ -238,8 +217,6 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
           advance_op));
     }
     int total = 1;
-    // Used to store intermediate results count
-    SizeT *h_count = new SizeT[1];
     for (int iter = 0; iter < nodes_query; ++iter) {
       // set counter to be equal to iter
       GUARD_CU(counter.ForAll(
@@ -259,62 +236,37 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
             [] __device__(bool *x, const SizeT &pos) { x[pos] = false; },
             nodes_data * edges_data * nodes_query, target, stream));
 
-        for (int val = 0; val < total; ++val) {
-          // set value to be equal to val
-          GUARD_CU(value.ForAll(
-              [val] __host__ __device__(VertexT * value_, const SizeT &pos) {
-                value_[pos] = val;
-              },
-              1, target, stream));
-          // reset write_to
-          GUARD_CU(write_to.ForAll(
-              [] __device__(bool *x, const SizeT &pos) { x[pos] = false; },
-              nodes_data, target, stream));
+        // Second and later iterations
+        GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
+            graph.csr(), complete_graph, complete_graph, oprtr_parameters,
+            prune_op));
+        GUARD_CU2(cudaStreamSynchronize(stream),
+                  "cudaStreamSynchronize failed");
 
-          // Second and later iterations
-          GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
-              graph.csr(), complete_graph, complete_graph, oprtr_parameters,
-              prune_op));
-          GUARD_CU2(cudaStreamSynchronize(stream),
-                    "cudaStreamSynchronize failed");
-
-          GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
-              graph.csr(), complete_graph, complete_graph, oprtr_parameters,
-              write_op));
-        }
+        GUARD_CU(temp_count.Move(util::DEVICE, util::HOST));
         // Update indices and reset results for compression
         GUARD_CU(indices.ForAll(
-            [results, nodes_data] __device__(SizeT *x, const SizeT &pos) {
-              x[pos] = results[pos/nodes_data] * nodes_data + (pos % nodes_data);
+            [results, nodes_data] __device__(SizeT * x, const SizeT &pos) {
+              x[pos] =
+                  results[pos / nodes_data] * nodes_data + (pos % nodes_data);
             },
-            h_count[0] * nodes_data, target, stream));
+            temp_count[0] * nodes_data, target, stream));
         GUARD_CU(results.ForAll(
-          [] __host__ __device__(SizeT * x, const SizeT &pos) {
-            x[pos] = 0;
-          },
-          nodes_data * edges_data * nodes_query, target, stream));
+            [] __host__ __device__(SizeT * x, const SizeT &pos) { x[pos] = 0; },
+            nodes_data * edges_data * nodes_query, target, stream));
       }
-      GUARD_CU(temp_count.ForAll(
-        [] __host__ __device__(SizeT * temp_count_, const SizeT &pos) {
-          temp_count_[pos] = 0;
-        },
-        1, target, stream));
-      GUARD_CU(util::CUBSelect_flagged(
-        indices.GetPointer(util::DEVICE),
-        flags_write.GetPointer(util::DEVICE),
-        results.GetPointer(util::DEVICE),
-        temp_count.GetPointer(util::DEVICE),
-        nodes_data * edges_data * nodes_query));
-      GUARD_CU(temp_count.SetPointer(h_count, 1, util::HOST));
-      GUARD_CU(temp_count.Move(util::DEVICE, util::HOST));
 
-      //indices.Print();
-      //results.Print();
-      //temp_count.Print();
-      //flags_write.Print();
+      GUARD_CU(util::CUBSelect_flagged(indices.GetPointer(util::DEVICE),
+                                       flags_write.GetPointer(util::DEVICE),
+                                       results.GetPointer(util::DEVICE),
+                                       temp_count.GetPointer(util::DEVICE),
+                                       nodes_data * edges_data * nodes_query));
+      // counter.Print();
+      // indices.Print();
+      // flags_write.Print();
+      // results.Print();
+      // temp_count.Print();
     }  // results and temp_count contains final results
-    delete[] h_count;
-    h_count = NULL;
 
     return retval;
   }
@@ -486,7 +438,6 @@ class Enactor
     GUARD_CU(BaseEnactor::Reset(target));
 
     SizeT nodes = this->problem->data_slices[0][0].sub_graph[0].nodes;
-    std::cout << nodes << std::endl;
 
     for (int gpu = 0; gpu < this->num_gpus; gpu++) {
       if (this->num_gpus == 1) {

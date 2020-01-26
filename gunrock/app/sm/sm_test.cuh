@@ -310,7 +310,9 @@ typename GraphT::SizeT Validate_Results(util::Parameters &parameters,
         "If you are using default reference, the referene code is only for "
         "triangle counting. The reference results can be wrong depanding on "
         "your test cases. If you want to get the correct reference results, "
-        "please turn use_boost = 1 in ../BaseMakefile.mk.",
+        "please turn use_boost = 1 in ../BaseMakefile.mk. If you are using "
+        "boost reference, the results are wrong when the base graph contains "
+        "self loops.",
         !quiet);
     util::PrintMsg(std::to_string(num_errors) + " errors occurred.", !quiet);
     return num_errors;
