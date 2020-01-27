@@ -78,7 +78,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
     util::Array1D<SizeT, bool> isValid; /** < Used for data node validation  */
     util::Array1D<SizeT, SizeT>
         counter; /** < Used for storing iteration number*/
-    util::Array1D<SizeT, SizeT>
+    util::Array1D<SizeT, unsigned long>
         temp_count; /** < Used for storing intermediate results count*/
     util::Array1D<SizeT, SizeT>
         constrain;                    /** < Smallest degree in query graph   */
@@ -90,11 +90,11 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
     util::Array1D<SizeT, SizeT>
         NT_offset; /** < Used for query node non-tree edge node offset info, one
                       node could have multiple non-tree edges */
-    util::Array1D<SizeT, SizeT>
+    util::Array1D<unsigned long, unsigned long>
         indices; /** < Used for storing combination values */
-    util::Array1D<SizeT, SizeT>
+    util::Array1D<unsigned long, unsigned long>
         results; /** < Used for storing compressed values */
-    util::Array1D<SizeT, bool>
+    util::Array1D<unsigned long, bool>
         flags_write;   /** < Used for storing next iteration candidate
                           combinations */
     SizeT nodes_query; /** < Used for number of query nodes */
@@ -185,12 +185,13 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       GUARD_CU(NT.Allocate(num_query_edge, util::HOST | util::DEVICE));
       GUARD_CU(
           NT_offset.Allocate(num_query_node + 1, util::HOST | util::DEVICE));
+      unsigned long mem_limit = ((unsigned long)sub_graph.nodes) * ((unsigned long)sub_graph.nodes) / 100;
       GUARD_CU(indices.Allocate(
-          sub_graph.nodes * sub_graph.edges * num_query_node, util::DEVICE));
+          mem_limit, util::DEVICE));
       GUARD_CU(results.Allocate(
-          sub_graph.nodes * sub_graph.edges * num_query_node, util::DEVICE));
+          mem_limit, util::HOST | util::DEVICE));
       GUARD_CU(flags_write.Allocate(
-          sub_graph.nodes * sub_graph.edges * num_query_node, util::DEVICE));
+          mem_limit, util::DEVICE));
 
       // Initialize query graph node degree by row offsets
       // neighbor node encoding = sum of neighbor node labels
@@ -312,21 +313,21 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
           [] __device__(bool *x, const SizeT &pos) { x[pos] = true; },
           sub_graph.nodes, target, this->stream));
       GUARD_CU(indices.ForAll(
-          [] __device__(SizeT * x, const SizeT &pos) { x[pos] = pos; },
+          [] __device__(unsigned long * x, const unsigned long &pos) { x[pos] = pos; },
           sub_graph.nodes, target, this->stream));
       GUARD_CU(results.ForAll(
-          [] __device__(SizeT * x, const SizeT &pos) { x[pos] = 0; },
-          sub_graph.nodes * sub_graph.edges * nodes_query, target,
+          [] __device__(unsigned long * x, const unsigned long &pos) { x[pos] = 0; },
+          mem_limit, target,
           this->stream));
       GUARD_CU(flags_write.ForAll(
-          [] __device__(bool *x, const SizeT &pos) { x[pos] = false; },
-          sub_graph.nodes * sub_graph.edges * nodes_query, target,
+          [] __device__(bool *x, const unsigned long &pos) { x[pos] = false; },
+          mem_limit, target,
           this->stream));
       GUARD_CU(counter.ForAll(
           [] __device__(SizeT * x, const SizeT &pos) { x[pos] = 0; }, 1, target,
           this->stream));
       GUARD_CU(temp_count.ForAll(
-          [] __host__ __device__(SizeT * x, const SizeT &pos) { x[pos] = 0; },
+          [] __host__ __device__(unsigned long * x, const SizeT &pos) { x[pos] = 0; },
           1, target, this->stream));
 
       if (target & util::DEVICE) {
@@ -412,42 +413,28 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
   cudaError_t Extract(VertexT *h_subgraphs,
                       util::Location target = util::DEVICE) {
     cudaError_t retval = cudaSuccess;
-    SizeT nodes = this->org_graph->nodes;
-    SizeT edges = this->org_graph->edges;
+    unsigned long nodes = this->org_graph->nodes;
+    unsigned long edges = this->org_graph->edges;
 
     if (this->num_gpus == 1) {
       auto &data_slice = data_slices[0][0];
       SizeT nodes_query = data_slice.nodes_query;
-      SizeT *h_results = new SizeT[nodes * edges * nodes_query];
-      SizeT *h_count = new SizeT[1];
+      unsigned long mem_limit = nodes * nodes / 100; 
 
       // Set device
       if (target == util::DEVICE) {
         GUARD_CU(util::SetDevice(this->gpu_idx[0]));
 
-        GUARD_CU(data_slice.results.SetPointer(
-            h_results, nodes * edges * nodes_query, util::HOST));
         GUARD_CU(data_slice.results.Move(util::DEVICE, util::HOST));
 
-        GUARD_CU(data_slice.temp_count.SetPointer(h_count, 1, util::HOST));
         GUARD_CU(data_slice.temp_count.Move(util::DEVICE, util::HOST));
-      } else if (target == util::HOST) {
-        GUARD_CU(data_slice.results.ForEach(
-            h_results,
-            [] __host__ __device__(const SizeT &d_x, SizeT &h_x) { h_x = d_x; },
-            nodes * edges * nodes_query, util::HOST));
-
-        GUARD_CU(data_slice.temp_count.ForEach(
-            h_count,
-            [] __host__ __device__(const SizeT &d_x, SizeT &h_x) { h_x = d_x; },
-            1, util::HOST));
-      }
+      } 
 
       // further extract combination from h_results to h_subgraphs
       vector<vector<int>> combinations;
-      for (int i = 0; i < h_count[0]; ++i) {
-        int key = h_results[i];
-        int stride = pow(nodes, nodes_query);
+      for (int i = 0; i < data_slice.temp_count[0]; ++i) {
+        unsigned long key = data_slice.results[i];
+        unsigned long stride = pow(nodes, nodes_query);
         vector<int> combination;
         for (int j = 0; j < nodes_query; ++j) {
           stride = stride / nodes;
@@ -473,10 +460,6 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       cout << endl;*/
       h_subgraphs[0] = combinations.size();
       // TODO: export combinations to output
-      delete[] h_results;
-      h_results = NULL;
-      delete[] h_count;
-      h_count = NULL;
 
     } else {  // num_gpus != 1
 

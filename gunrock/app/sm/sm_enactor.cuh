@@ -84,8 +84,9 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
     auto &stream = oprtr_parameters.stream;
     auto target = util::DEVICE;
     size_t nodes_query = data_slice.nodes_query;
-    size_t nodes_data = graph.nodes;
-    size_t edges_data = graph.edges;
+    unsigned long nodes_data = graph.nodes;
+    unsigned long edges_data = graph.edges;
+    unsigned long mem_limit = nodes_data * nodes_data / 100;
 
     util::Array1D<SizeT, VertexT> *null_frontier = NULL;
     auto complete_graph = null_frontier;
@@ -115,7 +116,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
     };  // advance_op
     auto prune_op = [subgraphs, row_offsets, col_indices, isValid, NS, NN, NT,
                      NT_offset, query_ro, query_ci, flags_write, counter,
-                     results, temp_count, nodes_data, nodes_query] __host__
+                     results, temp_count, nodes_data, nodes_query, mem_limit] __host__
                     __device__(const VertexT &src, VertexT &dest,
                                const SizeT &edge_id, const VertexT &input_item,
                                const SizeT &input_pos,
@@ -127,7 +128,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
       VertexT query_id = NS[counter[0]];  // node id of current query node
       SizeT min_degree = NS[counter[0] + nodes_query];
       int nn = NN[counter[0]];  // pos of previously visited neighbor in NS
-      int n = nodes_data;
+      unsigned long n = nodes_data;
       // first iteration (counter[0] = 0), src nodes are candidates
       if (nn == -1) {
         // check candidates' degrees
@@ -157,7 +158,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
         stride_src = stride_src * n;
       }
       int combination[50];  // 50 is the largest nodes_query value
-      for (int i = 0; i < temp_count[0]; ++i) {
+      for (unsigned long i = 0; i < temp_count[0]; ++i) {
         // src is not at nn pos of current combination
         if (src != (results[i] / stride_src) % n) continue;
         // src satisfies, later iterations counter[0] > 0, dest nodes are
@@ -204,7 +205,11 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
           continue;
         }
         // Checks finished, add dest to combination and write to new flags pos
-        flags_write[i * nodes_data + dest] = true;
+        unsigned long pos = (unsigned long)i * nodes_data + (unsigned long)dest;
+        if (pos >= mem_limit) {
+          continue;
+        }
+        flags_write[pos] = true;
       }
       return false;
     };  // prune_op
@@ -216,7 +221,7 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
           graph.csr(), complete_graph, complete_graph, oprtr_parameters,
           advance_op));
     }
-    int total = 1;
+    unsigned long total = 1;
     for (int iter = 0; iter < nodes_query; ++iter) {
       // set counter to be equal to iter
       GUARD_CU(counter.ForAll(
@@ -233,8 +238,8 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
         // total is the largest combination value this iteration could have
         total = total * nodes_data;
         GUARD_CU(flags_write.ForAll(
-            [] __device__(bool *x, const SizeT &pos) { x[pos] = false; },
-            nodes_data * edges_data * nodes_query, target, stream));
+            [] __device__(bool *x, const unsigned long &pos) { x[pos] = false; },
+            mem_limit, target, stream));
 
         // Second and later iterations
         GUARD_CU(oprtr::Advance<oprtr::OprtrType_V2V>(
@@ -245,22 +250,23 @@ struct SMIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
 
         GUARD_CU(temp_count.Move(util::DEVICE, util::HOST));
         // Update indices and reset results for compression
+        unsigned long size = min(temp_count[0] * nodes_data, mem_limit);
         GUARD_CU(indices.ForAll(
-            [results, nodes_data] __device__(SizeT * x, const SizeT &pos) {
+            [results, nodes_data] __device__(unsigned long * x, const unsigned long &pos) {
               x[pos] =
                   results[pos / nodes_data] * nodes_data + (pos % nodes_data);
             },
-            temp_count[0] * nodes_data, target, stream));
+            size, target, stream));
         GUARD_CU(results.ForAll(
-            [] __host__ __device__(SizeT * x, const SizeT &pos) { x[pos] = 0; },
-            nodes_data * edges_data * nodes_query, target, stream));
+            [] __host__ __device__(unsigned long * x, const unsigned long &pos) { x[pos] = 0; },
+            mem_limit, target, stream));
       }
 
       GUARD_CU(util::CUBSelect_flagged(indices.GetPointer(util::DEVICE),
                                        flags_write.GetPointer(util::DEVICE),
                                        results.GetPointer(util::DEVICE),
                                        temp_count.GetPointer(util::DEVICE),
-                                       nodes_data * edges_data * nodes_query));
+                                       mem_limit));
       // counter.Print();
       // indices.Print();
       // flags_write.Print();
